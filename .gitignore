@@ -1,0 +1,13 @@
+# Environment
+.env 
+.env.local
+
+# Logs
+erreurs_log.json
+
+# Database files
+*.sql
+
+# Node modules
+node_modules/
+

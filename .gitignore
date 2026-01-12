@@ -5,9 +5,11 @@
 # Logs
 erreurs_log.json
 
-# Database files
-*.sql
-
 # Node modules
 node_modules/
 
+# PostgreSQL scripts
+postgresScript/
+
+# Raw API data
+donnees_api_brutes.json

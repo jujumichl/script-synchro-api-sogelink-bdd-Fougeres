@@ -4,7 +4,7 @@ const { Pool } = require('pg');
 const fetch = require('node-fetch');
 const Joi = require('joi');
 const winston = require('winston');
-
+ 
 // Configuration du logger avec Winston
 const logger = winston.createLogger({
   level: 'info',
@@ -21,7 +21,7 @@ const logger = winston.createLogger({
 
 // Fonction pour calculer l'impact automatiquement
 function calculateImpact(properties) {
-  const { datedebut, datefin } = properties;
+  const { datedebut, datefin, duree} = properties;
   if (!datefin) {
     // Si pas de date de fin, chantier en cours, impact élevé
     return 3;
@@ -30,12 +30,9 @@ function calculateImpact(properties) {
     // Si pas de date de début, considérer comme peu impactant
     return 1;
   }
-  const start = new Date(datedebut);
-  const end = new Date(datefin);
-  const durationDays = (end - start) / (1000 * 60 * 60 * 24);
-  if (durationDays < 30) {
+  if (duree < 30) {
     return 1; // Peu impactant
-  } else if (durationDays <= 90) {
+  } else if (duree <= 90) {
     return 2; // Moyennement impactant
   } else {
     return 3; // Très impactant
@@ -53,7 +50,8 @@ const chantierSchema = Joi.object({
   datedebut: Joi.string().isoDate().allow(null), // Format ISO string
   datefin: Joi.string().isoDate().allow(null),
   description: Joi.string().max(1000).allow(null),
-  geometry: Joi.object().required()
+  geometry: Joi.object().required(),
+  emetteursociete: Joi.string().max(255).allow(null),
 }).unknown(true); // Permettre les champs supplémentaires comme srctype
 
 // Configuration du pool de connexions PostgreSQL avec SSL
@@ -63,7 +61,7 @@ const pool = new Pool({
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME || 'chantiers_fougeres',
-  ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false, // Ajuster selon vos besoins
+  ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false, 
   max: 10, // Limite du pool
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 2000,
@@ -101,6 +99,12 @@ async function fetchDataAndInsert() {
     const data = await response.json();
     logger.info('Données récupérées de l\'API');
 
+
+    // Écrire les données brutes dans un fichier pour visualisation
+/*     fs.writeFileSync('donnees_api_brutes.json', JSON.stringify(data, null, 2));
+    logger.info('Données API écrites dans donnees_api_brutes.json'); 
+ */
+
     // Pour chaque chantier, valider et insérer les données
     const validFeatures = [];
     for (const feature of data.features) {
@@ -117,48 +121,51 @@ async function fetchDataAndInsert() {
       validFeatures.push(feature); // Ajouter à la liste des valides
 
       // Mapping des propriétés pour l'insertion
-      const id_chantier = properties.idchantier;
-      const nom_chantier = properties.descriptionChantier || properties.description;
+      const id = properties.idchantier;
+      const description = properties.descriptionChantier || properties.description;
       const type_dossier = properties.typemodelelibelle;
-      let adresse = `${properties.adresse || ''} ${properties.codepostal || ''} ${properties.commune || ''}`.trim();
-      if (!adresse) {
-        // Si pas d'adresse, utiliser les coordonnées comme fallback (ex. : "Coordonnées: lon, lat")
-        const coords = geometry.coordinates[0][0][0]; // Premier point du MultiPolygon
-        adresse = `Coordonnées: ${coords[0]}, ${coords[1]}`;
+      const adresse = `${properties.adresse || ''} ${properties.codepostal || ''} ${properties.commune || ''}`.trim();
+      if(!adresse){
+        const coords = geometry.coordinates[0][0][0];
+        adresse = `Coordonnées: (${coords[0]}, ${coords[1]})`;
       }
       const date_debut = properties.datedebut;
       const date_fin = properties.datefin;
       const impact = calculateImpact(properties); // Calcul automatique de l'impact
+      const emetteursociete = properties.emetteursociete || null;
 
       const query = `
-        INSERT INTO chantiers (id_chantier, nom_chantier, type_dossier, adresse, date_debut, date_fin, impact, geom)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, ST_GeomFromGeoJSON($8)) 
-        ON CONFLICT (id_chantier)
+        INSERT INTO chantiers (id, description, type_dossier, adresse,
+        date_debut, date_fin, impact, geom, emetteursociete)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, ST_GeomFromGeoJSON($8), $9)
+        ON CONFLICT (id)
         DO UPDATE SET
-          nom_chantier = EXCLUDED.nom_chantier,
+          description = EXCLUDED.description,
           type_dossier = EXCLUDED.type_dossier,
           adresse = EXCLUDED.adresse,
           date_debut = EXCLUDED.date_debut,
           date_fin = EXCLUDED.date_fin,
           impact = EXCLUDED.impact,
-          geom = EXCLUDED.geom;
+          geom = EXCLUDED.geom,
+          emetteursociete = EXCLUDED.emetteursociete;
         `;
 
       try {
         // Exécuter la requête d'insertion
         await client.query(query, [
-          id_chantier, 
-          nom_chantier, 
+          id, 
+          description, 
           type_dossier, 
           adresse, 
           date_debut, 
           date_fin, 
           impact, 
           JSON.stringify(geometry),
+          emetteursociete
         ]);
-        logger.info(`Données insérées avec succès pour le chantier ${id_chantier}`);
+        logger.info(`Données insérées avec succès pour le chantier ${id}`);
       } catch (insertError) {
-        logger.error(`Erreur lors de l'insertion des données du chantier ${id_chantier}: ${insertError.message}`);
+        logger.error(`Erreur lors de l'insertion des données du chantier ${id}: ${insertError.message}`);
       }
     }
 

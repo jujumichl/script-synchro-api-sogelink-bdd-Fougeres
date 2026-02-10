@@ -1,5 +1,5 @@
 # Pour modifier le projet carto
-Aller sur la machine en distance, **IP : 10.0.0.72**
+Aller sur la machine en distance, __IP : 10.0.*.*__
 
 Pour modifier les templates qui s'affichent quand on clique sur une zone de travail il faut aller dans les couches, puis dans réglage de la couche (clé a molette).
 aller dans le menu tout a droite, puis dans Template vous verrez un aperçus du modèle.
